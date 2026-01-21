@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(npm run transpile:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm:*)",
+      "Bash(node --version:*)",
+      "Bash(ls:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(tar:*)",
+      "Bash(./node_modules/.bin/jest:*)"
+    ]
+  }
+}

@@ -144,3 +144,20 @@ export interface SendSignalNodeParams extends INodeFunctionBaseParams {
     config: SendSignalNodeConfig;
 }
 
+/**
+ * Authenticated call node configuration
+ */
+export interface AuthenticatedCallNodeConfig {
+    url: string;
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    headers: Record<string, string>;
+    body: string;
+}
+
+/**
+ * Authenticated call node parameters
+ */
+export interface AuthenticatedCallNodeParams extends INodeFunctionBaseParams {
+    config: AuthenticatedCallNodeConfig;
+}
+
