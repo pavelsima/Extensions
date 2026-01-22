@@ -57,6 +57,41 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             params: {
                 required: false
             }
+        },
+        {
+            key: "responseTarget",
+            label: "Response Target",
+            type: "select",
+            description: "Where to store the response data",
+            defaultValue: "context",
+            params: {
+                options: [
+                    { label: "Context", value: "context" },
+                    { label: "Input", value: "input" },
+                    { label: "Profile", value: "profile" }
+                ],
+                required: false
+            }
+        },
+        {
+            key: "responsePath",
+            label: "Response Path",
+            type: "cognigyText",
+            description: "Path where response data will be stored (e.g., context.cxone.lastResponse)",
+            defaultValue: "context.cxoneApiResponse",
+            params: {
+                required: false
+            }
+        },
+        {
+            key: "storeResponseHeaders",
+            label: "Store Response Headers",
+            type: "toggle",
+            description: "Store response headers alongside response data",
+            defaultValue: false,
+            params: {
+                required: false
+            }
         }
     ],
 
@@ -64,7 +99,10 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
         { type: "field", key: "method" },
         { type: "field", key: "url" },
         { type: "field", key: "headers" },
-        { type: "field", key: "body" }
+        { type: "field", key: "body" },
+        { type: "field", key: "responseTarget" },
+        { type: "field", key: "responsePath" },
+        { type: "field", key: "storeResponseHeaders" }
     ],
 
     appearance: {
@@ -72,8 +110,67 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
     },
 
     function: async ({ cognigy, config }: AuthenticatedCallNodeParams) => {
-        const { url, method, headers = {}, body } = config;
+        const {
+            url,
+            method,
+            headers = {},
+            body,
+            responseTarget = "context",
+            responsePath = "context.cxoneApiResponse",
+            storeResponseHeaders = false
+        } = config;
         const { api, input } = cognigy;
+
+        // Helper function to store data at a specified path based on target
+        const storeDataAtPath = (target: string, path: string, data: unknown) => {
+            if (!responsePath) return;
+
+            try {
+                switch (target) {
+                    case "context":
+                        // Extract the key from the path (e.g., "context.cxone.lastResponse" -> "cxone.lastResponse")
+                        const contextKey = path.startsWith("context.") ? path.substring(8) : path;
+                        api.addToContext(contextKey, data, "simple");
+                        break;
+
+                    case "input":
+                        // For input, we need to set nested properties
+                        const inputParts = path.split(".");
+                        if (inputParts.length === 1) {
+                            input[inputParts[0]] = data;
+                        } else {
+                            // Create nested structure
+                            let current = input;
+                            for (let i = 0; i < inputParts.length - 1; i++) {
+                                if (!current[inputParts[i]]) {
+                                    current[inputParts[i]] = {};
+                                }
+                                current = current[inputParts[i]];
+                            }
+                            current[inputParts[inputParts.length - 1]] = data;
+                        }
+                        break;
+
+                    case "profile":
+                        // For profile, we use the profile API if available
+                        const profileKey = path.startsWith("profile.") ? path.substring(8) : path;
+                        if ("setProfileKey" in api && typeof api.setProfileKey === "function") {
+                            api.setProfileKey(profileKey, data);
+                        } else {
+                            api.log("warn", "Profile storage not available, falling back to context");
+                            api.addToContext(profileKey, data, "simple");
+                        }
+                        break;
+
+                    default:
+                        api.log("error", `Unsupported response target: ${target}`);
+                        break;
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                api.log("error", `Failed to store response data at ${path}: ${errorMessage}`);
+            }
+        };
 
         try {
             // Check for cxonetoken in input.data first, then context as fallback
@@ -145,14 +242,35 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
 
             api.log("info", `Request completed with status: ${response.status}`);
 
-            // Add to context for potential use in subsequent nodes
+            // Store response body in configured target/path
+            if (responseTarget && responsePath) {
+                storeDataAtPath(responseTarget, responsePath, responseBody);
+                api.log("info", `Response body stored at ${responseTarget}.${responsePath}`);
+            }
+
+            // Store response headers if enabled
+            if (storeResponseHeaders && responseTarget && responsePath) {
+                // Create redacted headers object (exclude any request authorization data)
+                const responseHeaders: Record<string, string> = {};
+                response.headers.forEach((value, key) => {
+                    // Only store response headers, never store request authorization headers
+                    responseHeaders[key] = value;
+                });
+
+                // Store headers at sibling path with .headers suffix
+                const headersPath = `${responsePath}.headers`;
+                storeDataAtPath(responseTarget, headersPath, responseHeaders);
+                api.log("info", `Response headers stored at ${responseTarget}.${headersPath}`);
+            }
+
+            // Add to context for potential use in subsequent nodes (maintain backward compatibility)
             api.addToContext("cxoneApiResponse", result, "simple");
 
-            // Output the result
+            // Output the result (always return node output as in MVP to avoid breaking flows)
             api.output("Request completed successfully", result);
 
-        } catch (error: any) {
-            const errorMessage = error.message || "Unknown error occurred during HTTP request";
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred during HTTP request";
             api.log("error", `CXone Authenticated Call error: ${errorMessage}`);
 
             // Return structured error response
@@ -163,7 +281,16 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 }
             };
 
+            // Store error response in configured target/path
+            if (responseTarget && responsePath) {
+                storeDataAtPath(responseTarget, responsePath, errorResult.body);
+                api.log("info", `Error response stored at ${responseTarget}.${responsePath}`);
+            }
+
+            // Add to context for backward compatibility
             api.addToContext("cxoneApiResponse", errorResult, "simple");
+
+            // Output the error result
             api.output("Request failed", errorResult);
         }
     }
