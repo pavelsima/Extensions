@@ -49,36 +49,87 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             }
         },
         {
-            key: "body",
-            label: "Request Body",
+            key: "payloadType",
+            label: "Payload Type",
+            type: "select",
+            description: "Select the format of the request body",
+            defaultValue: "json",
+            params: {
+                options: [
+                    { label: "JSON", value: "json" },
+                    { label: "Text", value: "text" },
+                    { label: "Form Data", value: "form" }
+                ],
+                required: false
+            },
+            condition: {
+                key: "method",
+                value: "GET",
+                negate: true
+            }
+        },
+        {
+            key: "bodyJson",
+            label: "Request Body (JSON)",
             type: "json",
-            description: "Request body for POST, PUT, and PATCH requests. Can be JSON object or raw text.",
+            description: "Request body as JSON object",
+            defaultValue: "{}",
+            params: {
+                required: false
+            },
+            condition: {
+                key: "payloadType",
+                value: "json"
+            }
+        },
+        {
+            key: "bodyText",
+            label: "Request Body (Text)",
+            type: "cognigyText",
+            description: "Request body as plain text",
             defaultValue: "",
             params: {
                 required: false
+            },
+            condition: {
+                key: "payloadType",
+                value: "text"
+            }
+        },
+        {
+            key: "bodyForm",
+            label: "Request Body (Form Data)",
+            type: "json",
+            description: "Request body as key-value pairs for form data (e.g., {\"key1\": \"value1\", \"key2\": \"value2\"})",
+            defaultValue: "{}",
+            params: {
+                required: false
+            },
+            condition: {
+                key: "payloadType",
+                value: "form"
             }
         },
         {
             key: "responseTarget",
-            label: "Response Target",
+            label: "Store Result In",
             type: "select",
             description: "Where to store the response data",
             defaultValue: "context",
             params: {
                 options: [
                     { label: "Context", value: "context" },
-                    { label: "Input", value: "input" },
-                    { label: "Profile", value: "profile" }
+                    { label: "Input", value: "input" }
                 ],
                 required: false
             }
         },
         {
-            key: "responsePath",
-            label: "Response Path",
+            key: "responseKey",
+            label: "Key to store Result",
             type: "cognigyText",
-            description: "Path where response data will be stored (e.g., context.cxone.lastResponse)",
-            defaultValue: "context.cxoneApiResponse",
+            description: "Key where response data will be stored",
+            defaultValue: "cxoneApiResponse",
             params: {
                 required: false
             }
@@ -95,14 +146,44 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
         }
     ],
 
+    sections: [
+        {
+            key: "headersSection",
+            label: "Headers",
+            defaultCollapsed: true,
+            fields: [
+                "headers",
+                "storeResponseHeaders"
+            ]
+        },
+        {
+            key: "payloadSection",
+            label: "Payload",
+            defaultCollapsed: false,
+            fields: [
+                "payloadType",
+                "bodyJson",
+                "bodyText",
+                "bodyForm"
+            ]
+        },
+        {
+            key: "storageSection",
+            label: "Storage Options",
+            defaultCollapsed: true,
+            fields: [
+                "responseTarget",
+                "responseKey"
+            ]
+        }
+    ],
+
     form: [
         { type: "field", key: "method" },
         { type: "field", key: "url" },
-        { type: "field", key: "headers" },
-        { type: "field", key: "body" },
-        { type: "field", key: "responseTarget" },
-        { type: "field", key: "responsePath" },
-        { type: "field", key: "storeResponseHeaders" }
+        { type: "section", key: "headersSection" },
+        { type: "section", key: "payloadSection" },
+        { type: "section", key: "storageSection" }
     ],
 
     appearance: {
@@ -114,61 +195,112 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             url,
             method,
             headers = {},
-            body,
+            body, // Legacy field for backward compatibility
+            payloadType,
+            bodyJson,
+            bodyText,
+            bodyForm,
             responseTarget = "context",
-            responsePath = "context.cxoneApiResponse",
+            responseKey = "cxoneApiResponse",
             storeResponseHeaders = false
         } = config;
         const { api, input } = cognigy;
 
-        // Helper function to store data at a specified path based on target
-        const storeDataAtPath = (target: string, path: string, data: unknown) => {
-            if (!responsePath) return;
+        // Helper function to determine payload data based on payload type
+        const getPayloadData = () => {
+            if (method === "GET" || method === "DELETE") {
+                return undefined;
+            }
+
+            // Use new payload fields if available
+            if (payloadType && (bodyJson !== undefined || bodyText !== undefined || bodyForm !== undefined)) {
+                switch (payloadType) {
+                    case "json":
+                        return bodyJson;
+                    case "text":
+                        return bodyText;
+                    case "form":
+                        return bodyForm;
+                    default:
+                        return undefined;
+                }
+            }
+
+            // Fallback to legacy body field for backward compatibility
+            return body;
+        };
+
+        // Helper function to prepare request body and content type
+        const prepareRequestBody = (currentPayloadType: string | undefined, payloadData: any) => {
+            if (!payloadData || method === "GET" || method === "DELETE") {
+                return { body: undefined, contentType: "application/json" };
+            }
+
+            let requestBody: string;
+            let contentType: string;
+
+            // Determine effective payload type
+            const effectivePayloadType = currentPayloadType || "json"; // Default to JSON for legacy compatibility
+
+            switch (effectivePayloadType) {
+                case "json":
+                    contentType = "application/json";
+                    if (typeof payloadData === "string") {
+                        requestBody = payloadData;
+                    } else {
+                        requestBody = JSON.stringify(payloadData);
+                    }
+                    break;
+                case "text":
+                    contentType = "text/plain";
+                    requestBody = String(payloadData);
+                    break;
+                case "form":
+                    contentType = "application/x-www-form-urlencoded";
+                    if (typeof payloadData === "object" && payloadData !== null) {
+                        // Convert object to URL-encoded string
+                        const params = new URLSearchParams();
+                        for (const [key, value] of Object.entries(payloadData)) {
+                            params.append(key, String(value));
+                        }
+                        requestBody = params.toString();
+                    } else {
+                        requestBody = String(payloadData);
+                    }
+                    break;
+                default:
+                    // Fallback to JSON for unknown types
+                    contentType = "application/json";
+                    if (typeof payloadData === "string") {
+                        requestBody = payloadData;
+                    } else {
+                        requestBody = JSON.stringify(payloadData);
+                    }
+                    break;
+            }
+
+            return { body: requestBody, contentType };
+        };
+
+        // Helper function to store data based on target and key
+        const storeData = (target: string, key: string, data: unknown) => {
+            if (!key) return;
 
             try {
                 switch (target) {
                     case "context":
-                        // Extract the key from the path (e.g., "context.cxone.lastResponse" -> "cxone.lastResponse")
-                        const contextKey = path.startsWith("context.") ? path.substring(8) : path;
-                        api.addToContext(contextKey, data, "simple");
+                        api.addToContext(key, data, "simple");
                         break;
-
                     case "input":
-                        // For input, we need to set nested properties
-                        const inputParts = path.split(".");
-                        if (inputParts.length === 1) {
-                            input[inputParts[0]] = data;
-                        } else {
-                            // Create nested structure
-                            let current = input;
-                            for (let i = 0; i < inputParts.length - 1; i++) {
-                                if (!current[inputParts[i]]) {
-                                    current[inputParts[i]] = {};
-                                }
-                                current = current[inputParts[i]];
-                            }
-                            current[inputParts[inputParts.length - 1]] = data;
-                        }
+                        input[key] = data;
                         break;
-
-                    case "profile":
-                        // For profile, we use the profile API if available
-                        const profileKey = path.startsWith("profile.") ? path.substring(8) : path;
-                        if ("setProfileKey" in api && typeof api.setProfileKey === "function") {
-                            api.setProfileKey(profileKey, data);
-                        } else {
-                            api.log("warn", "Profile storage not available, falling back to context");
-                            api.addToContext(profileKey, data, "simple");
-                        }
-                        break;
-
                     default:
                         api.log("error", `Unsupported response target: ${target}`);
                         break;
                 }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                api.log("error", `Failed to store response data at ${path}: ${errorMessage}`);
+                api.log("error", `Failed to store response data with key ${key}: ${errorMessage}`);
             }
         };
 
@@ -197,9 +329,13 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
 
             api.log("info", `Making ${method} request to: ${url}`);
 
-            // Prepare headers with injected Authorization
+            // Get payload data and prepare request body
+            const payloadData = getPayloadData();
+            const { body: requestBody, contentType: requestContentType } = prepareRequestBody(payloadType, payloadData);
+
+            // Prepare headers with injected Authorization and appropriate Content-Type
             const requestHeaders: Record<string, string> = {
-                "Content-Type": "application/json",
+                "Content-Type": requestContentType,
                 ...headers,
                 // Override any user-provided Authorization header
                 "Authorization": `Bearer ${cxoneToken}`
@@ -211,13 +347,9 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 headers: requestHeaders
             };
 
-            // Add body for methods that support it
-            if (method !== "GET" && method !== "DELETE" && body) {
-                if (typeof body === "string") {
-                    requestOptions.body = body;
-                } else {
-                    requestOptions.body = JSON.stringify(body);
-                }
+            // Add body for methods that support it (not GET or DELETE)
+            if (requestBody && method !== "GET" && method !== "DELETE") {
+                requestOptions.body = requestBody;
             }
 
             // Make the HTTP request
@@ -226,47 +358,39 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
 
             // Parse response
             let responseBody;
-            const contentType = response.headers.get("content-type");
+            const responseContentType = response.headers.get("content-type");
 
-            if (contentType && contentType.includes("application/json")) {
+            if (responseContentType && responseContentType.includes("application/json")) {
                 responseBody = await response.json();
             } else {
                 responseBody = await response.text();
             }
 
-            // Prepare result
-            const result = {
+            // Prepare result object
+            const result: any = {
                 status: response.status,
                 body: responseBody
             };
 
-            api.log("info", `Request completed with status: ${response.status}`);
-
-            // Store response body in configured target/path
-            if (responseTarget && responsePath) {
-                storeDataAtPath(responseTarget, responsePath, responseBody);
-                api.log("info", `Response body stored at ${responseTarget}.${responsePath}`);
-            }
-
-            // Store response headers if enabled
-            if (storeResponseHeaders && responseTarget && responsePath) {
-                // Create redacted headers object (exclude any request authorization data)
+            // Add headers to result if enabled
+            if (storeResponseHeaders) {
                 const responseHeaders: Record<string, string> = {};
                 response.headers.forEach((value, key) => {
-                    // Only store response headers, never store request authorization headers
                     responseHeaders[key] = value;
                 });
-
-                // Store headers at sibling path with .headers suffix
-                const headersPath = `${responsePath}.headers`;
-                storeDataAtPath(responseTarget, headersPath, responseHeaders);
-                api.log("info", `Response headers stored at ${responseTarget}.${headersPath}`);
+                result.headers = responseHeaders;
             }
 
-            // Add to context for potential use in subsequent nodes (maintain backward compatibility)
-            api.addToContext("cxoneApiResponse", result, "simple");
+            api.log("info", `Request completed with status: ${response.status}`);
 
-            // Output the result (always return node output as in MVP to avoid breaking flows)
+            // Store complete response object in configured target/key
+            if (responseTarget && responseKey) {
+                storeData(responseTarget, responseKey, result);
+                const headerInfo = storeResponseHeaders ? " (including headers)" : "";
+                api.log("info", `Complete response stored in ${responseTarget}.${responseKey}${headerInfo}`);
+            }
+
+            // Output the result
             api.output("Request completed successfully", result);
 
         } catch (error) {
@@ -281,14 +405,11 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 }
             };
 
-            // Store error response in configured target/path
-            if (responseTarget && responsePath) {
-                storeDataAtPath(responseTarget, responsePath, errorResult.body);
-                api.log("info", `Error response stored at ${responseTarget}.${responsePath}`);
+            // Store complete error response in configured target/key
+            if (responseTarget && responseKey) {
+                storeData(responseTarget, responseKey, errorResult);
+                api.log("info", `Error response stored in ${responseTarget}.${responseKey}`);
             }
-
-            // Add to context for backward compatibility
-            api.addToContext("cxoneApiResponse", errorResult, "simple");
 
             // Output the error result
             api.output("Request failed", errorResult);

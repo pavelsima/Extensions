@@ -145,13 +145,35 @@ export interface SendSignalNodeParams extends INodeFunctionBaseParams {
 }
 
 /**
+ * Response storage target types
+ */
+export type ResponseTarget = "context" | "input";
+
+/**
+ * Payload type options
+ */
+export type PayloadType = "json" | "text" | "form";
+
+/**
  * Authenticated call node configuration
  */
 export interface AuthenticatedCallNodeConfig {
     url: string;
     method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     headers: Record<string, string>;
-    body: string;
+
+    // Legacy body field for backward compatibility
+    body?: string;
+
+    // Payload configuration (for non-GET/DELETE methods)
+    payloadType?: PayloadType;
+    bodyJson?: any;
+    bodyText?: string;
+    bodyForm?: Record<string, string>;
+
+    responseTarget?: ResponseTarget;
+    responseKey?: string;
+    storeResponseHeaders?: boolean;
 }
 
 /**
