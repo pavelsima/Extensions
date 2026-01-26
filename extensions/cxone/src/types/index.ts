@@ -171,6 +171,11 @@ export interface AuthenticatedCallNodeConfig {
     bodyText?: string;
     bodyForm?: Record<string, string>;
 
+    // Execution configuration
+    timeoutMs?: number;
+    enableRetry?: boolean;
+    retryAttempts?: number;
+
     responseTarget?: ResponseTarget;
     responseKey?: string;
     storeResponseHeaders?: boolean;

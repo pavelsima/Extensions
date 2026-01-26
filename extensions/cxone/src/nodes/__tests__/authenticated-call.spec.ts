@@ -27,8 +27,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should make a GET request with cxonetoken from input.data", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true, data: "test" })
+                json: jest.fn().mockResolvedValue({ success: true, data: "test"
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -52,7 +54,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token-123"
-                }
+                },
+                signal: expect.any(AbortSignal)
             });
 
             expect(cognigy.api.output).toHaveBeenCalledWith(
@@ -73,8 +76,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 201,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ id: 456 })
+                json: jest.fn().mockResolvedValue({ id: 456
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -99,7 +104,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token-456"
                 },
-                body: '{"name":"test","value":123}'
+                body: '{"name":"test","value":123}',
+                signal: expect.any(AbortSignal)
             });
 
             expect(cognigy.api.output).toHaveBeenCalledWith(
@@ -114,6 +120,7 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should handle text responses", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "text/plain"]]),
                 text: jest.fn().mockResolvedValue("Plain text response")
             };
@@ -153,8 +160,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -178,7 +187,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer correct-token" // Should be the cxonetoken, not user-provided
-                }
+                },
+                signal: expect.any(AbortSignal)
             });
         });
 
@@ -191,8 +201,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ received: "ok" })
+                json: jest.fn().mockResolvedValue({ received: "ok"
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -217,7 +229,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token"
                 },
-                body: "raw string body"
+                body: "raw string body",
+                signal: expect.any(AbortSignal)
             });
         });
     });
@@ -312,6 +325,7 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should handle response parsing errors", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
                 json: jest.fn().mockRejectedValue(new Error("Invalid JSON"))
             };
@@ -347,8 +361,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should use token from context when input.data.cxonetoken is missing", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -373,7 +389,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer context-token-123"
-                }
+                },
+                signal: expect.any(AbortSignal)
             });
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
@@ -393,8 +410,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should prioritize input.data.cxonetoken over context.cxonetoken", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -421,7 +440,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer input-token-priority"
-                }
+                },
+                signal: expect.any(AbortSignal)
             });
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
@@ -433,8 +453,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should handle empty input.data and use context token", async () => {
             const mockResponse = {
                 status: 201,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ created: true })
+                json: jest.fn().mockResolvedValue({ created: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -466,7 +488,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer context-fallback-token"
                 },
-                body: '{"test":"data"}'
+                body: '{"test":"data"}',
+                signal: expect.any(AbortSignal)
             });
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
@@ -486,8 +509,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -511,7 +536,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token"
-                }
+                },
+                signal: expect.any(AbortSignal)
                 // No body should be present
             });
         });
@@ -525,6 +551,7 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 204,
+                ok: true,
                 headers: new Map(),
                 text: jest.fn().mockResolvedValue("")
             };
@@ -550,7 +577,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Content-Type": "application/json",
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token"
-                }
+                },
+                signal: expect.any(AbortSignal)
                 // No body should be present
             });
         });
@@ -560,8 +588,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should log request details and completion", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -585,11 +615,11 @@ describe("cxoneAuthenticatedCall node", () => {
             );
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Executing GET request with Authorization header"
+                expect.stringMatching(/Executing GET request with timeout: \d+ms, max attempts: \d+/)
             );
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Request completed with status: 200"
+                expect.stringMatching(/Request completed with status: 200 \(attempt \d+\/\d+\)/)
             );
         });
     });
@@ -597,6 +627,7 @@ describe("cxoneAuthenticatedCall node", () => {
     describe("response handling and storage", () => {
         const mockResponseWithHeaders = {
             status: 200,
+            ok: true,
             headers: new Map([
                 ["content-type", "application/json"],
                 ["x-custom-header", "custom-value"],
@@ -821,8 +852,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 201,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ id: 456 })
+                json: jest.fn().mockResolvedValue({ id: 456
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -847,7 +880,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token-456"
                 },
-                body: '{"name":"test","value":123}'
+                body: '{"name":"test","value":123}',
+                signal: expect.any(AbortSignal)
             });
         });
 
@@ -861,6 +895,7 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "text/plain"]]),
                 text: jest.fn().mockResolvedValue("ok")
             };
@@ -887,7 +922,8 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token"
                 },
-                body: "plain text body"
+                body: "plain text body",
+                signal: expect.any(AbortSignal)
             });
         });
 
@@ -901,8 +937,10 @@ describe("cxoneAuthenticatedCall node", () => {
 
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ success: true })
+                json: jest.fn().mockResolvedValue({ success: true
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -927,15 +965,18 @@ describe("cxoneAuthenticatedCall node", () => {
                     "Custom-Header": "test-value",
                     "Authorization": "Bearer test-token"
                 },
-                body: "username=testuser&password=secret123"
+                body: "username=testuser&password=secret123",
+                signal: expect.any(AbortSignal)
             });
         });
 
         it("should store response using simple key format in context", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ result: "success" })
+                json: jest.fn().mockResolvedValue({ result: "success"
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
@@ -971,8 +1012,10 @@ describe("cxoneAuthenticatedCall node", () => {
         it("should store response using simple key format in input", async () => {
             const mockResponse = {
                 status: 200,
+                ok: true,
                 headers: new Map([["content-type", "application/json"]]),
-                json: jest.fn().mockResolvedValue({ result: "success" })
+                json: jest.fn().mockResolvedValue({ result: "success"
+            })
             };
 
             mockFetch.mockResolvedValue(mockResponse as any);
