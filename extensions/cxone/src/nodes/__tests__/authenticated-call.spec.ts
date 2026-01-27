@@ -61,8 +61,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request completed successfully",
                 {
-                    status: 200,
-                    body: { success: true, data: "test" }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true, data: "test" }
+                    }
                 }
             );
         });
@@ -111,8 +114,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request completed successfully",
                 {
-                    status: 201,
-                    body: { id: 456 }
+                    success: true,
+                    data: {
+                        status: 201,
+                        body: { id: 456 }
+                    }
                 }
             );
         });
@@ -143,8 +149,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request completed successfully",
                 {
-                    status: 200,
-                    body: "Plain text response"
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: "Plain text response"
+                    }
                 }
             );
         });
@@ -253,13 +262,21 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Authentication Error",
                 {
-                    error: "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication.",
-                    status: 401
+                    success: false,
+                    error: {
+                        type: "MissingToken",
+                        message: "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication.",
+                        status: 401,
+                        details: {
+                            tokenSources: ["input.data.cxonetoken", "context.cxonetoken"]
+                        },
+                        requestId: expect.any(String)
+                    }
                 }
             );
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "error",
-                "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication."
+                expect.stringMatching(/Request req_[a-z0-9_]+: Missing cxonetoken/)
             );
         });
 
@@ -284,8 +301,16 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Authentication Error",
                 {
-                    error: "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication.",
-                    status: 401
+                    success: false,
+                    error: {
+                        type: "MissingToken",
+                        message: "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication.",
+                        status: 401,
+                        details: {
+                            tokenSources: ["input.data.cxonetoken", "context.cxonetoken"]
+                        },
+                        requestId: expect.any(String)
+                    }
                 }
             );
         });
@@ -308,15 +333,21 @@ describe("cxoneAuthenticatedCall node", () => {
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "error",
-                "CXone Authenticated Call error: Network error"
+                expect.stringMatching(/Request req_[a-z0-9_]+: Network error: Network error/)
             );
 
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request failed",
                 {
-                    status: 500,
-                    body: {
-                        error: "Network error"
+                    success: false,
+                    error: {
+                        type: "NetworkError",
+                        message: "Network error: Network error",
+                        status: 503,
+                        details: {
+                            isRetryable: true
+                        },
+                        requestId: expect.any(String)
                     }
                 }
             );
@@ -348,9 +379,15 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request failed",
                 {
-                    status: 500,
-                    body: {
-                        error: "Invalid JSON"
+                    success: false,
+                    error: {
+                        type: "NetworkError",
+                        message: "Network error: Invalid JSON",
+                        status: 503,
+                        details: {
+                            isRetryable: true
+                        },
+                        requestId: expect.any(String)
                     }
                 }
             );
@@ -395,14 +432,17 @@ describe("cxoneAuthenticatedCall node", () => {
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Using cxonetoken from context"
+                expect.stringMatching(/Request req_[a-z0-9_]+: Using cxonetoken from context/)
             );
 
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request completed successfully",
                 {
-                    status: 200,
-                    body: { success: true }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true }
+                    }
                 }
             );
         });
@@ -446,7 +486,7 @@ describe("cxoneAuthenticatedCall node", () => {
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Using cxonetoken from input.data"
+                expect.stringMatching(/Request req_[a-z0-9_]+: Using cxonetoken from input.data/)
             );
         });
 
@@ -494,7 +534,7 @@ describe("cxoneAuthenticatedCall node", () => {
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Using cxonetoken from context"
+                expect.stringMatching(/Request req_[a-z0-9_]+: Using cxonetoken from context/)
             );
         });
     });
@@ -611,7 +651,7 @@ describe("cxoneAuthenticatedCall node", () => {
 
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                "Making GET request to: https://api.example.com/test"
+                expect.stringMatching(/Request req_[a-z0-9_]+: Making GET request to: https:\/\/api\.example\.com\/test/)
             );
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
@@ -619,7 +659,7 @@ describe("cxoneAuthenticatedCall node", () => {
             );
             expect(cognigy.api.log).toHaveBeenCalledWith(
                 "info",
-                expect.stringMatching(/Request completed with status: 200 \(attempt \d+\/\d+\)/)
+                expect.stringMatching(/Request req_[a-z0-9_]+: Completed with status 200 \(attempt \d+\/\d+\)/)
             );
         });
     });
@@ -668,8 +708,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.addToContext).toHaveBeenCalledWith(
                 "cxone.lastResponse",
                 {
-                    status: 200,
-                    body: { success: true, data: "test" }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true, data: "test" }
+                    }
                 },
                 "simple"
             );
@@ -700,12 +743,15 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.addToContext).toHaveBeenCalledWith(
                 "cxone.apiCall",
                 {
-                    status: 200,
-                    body: { success: true, data: "test" },
-                    headers: {
-                        "content-type": "application/json",
-                        "x-custom-header": "custom-value",
-                        "server": "nginx/1.18.0"
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true, data: "test" },
+                        headers: {
+                            "content-type": "application/json",
+                            "x-custom-header": "custom-value",
+                            "server": "nginx/1.18.0"
+                        }
                     }
                 },
                 "simple"
@@ -734,8 +780,11 @@ describe("cxoneAuthenticatedCall node", () => {
 
             // Should store complete response object in input with specified key
             expect(cognigy.input["api.lastCall"]).toEqual({
-                status: 200,
-                body: { success: true, data: "test" }
+                success: true,
+                data: {
+                    status: 200,
+                    body: { success: true, data: "test" }
+                }
             });
         });
 
@@ -764,8 +813,16 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.addToContext).toHaveBeenCalledWith(
                 "cxone.errorResponse",
                 {
-                    status: 500,
-                    body: { error: "Network timeout" }
+                    success: false,
+                    error: {
+                        type: "NetworkError",
+                        message: "Network error: Network timeout",
+                        status: 503,
+                        details: {
+                            isRetryable: true
+                        },
+                        requestId: expect.any(String)
+                    }
                 },
                 "simple"
             );
@@ -797,8 +854,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.addToContext).toHaveBeenCalledWith(
                 "cxone.response",
                 {
-                    status: 200,
-                    body: { success: true, data: "test" }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true, data: "test" }
+                    }
                 },
                 "simple"
             );
@@ -806,7 +866,7 @@ describe("cxoneAuthenticatedCall node", () => {
             // Should NOT include headers in the response object
             expect(cognigy.api.addToContext).toHaveBeenCalledTimes(1); // Only one call for the main response
             const storedResponse = (cognigy.api.addToContext as jest.Mock).mock.calls[0][1];
-            expect(storedResponse.headers).toBeUndefined();
+            expect(storedResponse.data.headers).toBeUndefined();
         });
 
         it("should handle missing responsePath gracefully", async () => {
@@ -834,8 +894,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.output).toHaveBeenCalledWith(
                 "Request completed successfully",
                 {
-                    status: 200,
-                    body: { success: true, data: "test" }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { success: true, data: "test" }
+                    }
                 }
             );
         });
@@ -1002,8 +1065,11 @@ describe("cxoneAuthenticatedCall node", () => {
             expect(cognigy.api.addToContext).toHaveBeenCalledWith(
                 "myApiResult",
                 {
-                    status: 200,
-                    body: { result: "success" }
+                    success: true,
+                    data: {
+                        status: 200,
+                        body: { result: "success" }
+                    }
                 },
                 "simple"
             );
@@ -1039,8 +1105,11 @@ describe("cxoneAuthenticatedCall node", () => {
 
             // Should store complete response object in input with the key
             expect(cognigy.input.myApiResult).toEqual({
-                status: 200,
-                body: { result: "success" }
+                success: true,
+                data: {
+                    status: 200,
+                    body: { result: "success" }
+                }
             });
         });
     });

@@ -1,5 +1,6 @@
 import { createNodeDescriptor } from "@cognigy/extension-tools";
 import { AuthenticatedCallNodeParams } from "../types";
+import { generateRequestId, ErrorCreators, createErrorResponse, createSuccessResponse } from "../helpers/errors";
 
 export const cxoneAuthenticatedCall = createNodeDescriptor({
     type: "cxoneAuthenticatedCall",
@@ -148,12 +149,12 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             key: "timeoutMs",
             label: "Timeout (ms)",
             type: "number",
-            description: "Request timeout in milliseconds (1-30 seconds). Prevents requests from hanging indefinitely. Hard 30-second execution budget applies regardless of this setting.",
+            description: "Request timeout in milliseconds (1-20 seconds). Prevents requests from hanging indefinitely. Hard 20-second execution budget applies regardless of this setting.",
             defaultValue: 8000,
             params: {
                 required: false,
                 min: 1000,
-                max: 30000
+                max: 20000
             }
         },
         {
@@ -180,6 +181,36 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             condition: {
                 key: "enableRetry",
                 value: true
+            }
+        },
+        {
+            key: "failOnNon2xx",
+            label: "Fail on Non-2xx Status",
+            type: "toggle",
+            description: "When enabled, non-2xx HTTP responses produce structured errors. When disabled, non-2xx responses are treated as successful with status and body preserved.",
+            defaultValue: true,
+            params: {
+                required: false
+            }
+        },
+        {
+            key: "debugMode",
+            label: "Debug Mode",
+            type: "toggle",
+            description: "Enable enhanced logging with request/response details. Sensitive data (tokens, credentials) will be redacted for security.",
+            defaultValue: false,
+            params: {
+                required: false
+            }
+        },
+        {
+            key: "allowInsecureSSL",
+            label: "Allow Insecure SSL",
+            type: "toggle",
+            description: "Allow requests to HTTPS endpoints with unauthorized or self-signed SSL certificates. WARNING: Only enable this for development/testing environments.",
+            defaultValue: false,
+            params: {
+                required: false
             }
         }
     ],
@@ -216,6 +247,23 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             ]
         },
         {
+            key: "errorHandlingSection",
+            label: "Error Handling & Debug",
+            defaultCollapsed: true,
+            fields: [
+                "failOnNon2xx",
+                "debugMode"
+            ]
+        },
+        {
+            key: "securitySection",
+            label: "Security",
+            defaultCollapsed: true,
+            fields: [
+                "allowInsecureSSL"
+            ]
+        },
+        {
             key: "storageSection",
             label: "Storage Options",
             defaultCollapsed: true,
@@ -232,6 +280,8 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
         { type: "section", key: "headersSection" },
         { type: "section", key: "payloadSection" },
         { type: "section", key: "executionSection" },
+        { type: "section", key: "errorHandlingSection" },
+        { type: "section", key: "securitySection" },
         { type: "section", key: "storageSection" }
     ],
 
@@ -252,6 +302,9 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             timeoutMs = 8000,
             enableRetry = false,
             retryAttempts = 1,
+            failOnNon2xx = true,
+            debugMode = false,
+            allowInsecureSSL = false,
             responseTarget = "context",
             responseKey = "cxoneApiResponse",
             storeResponseHeaders = false
@@ -356,8 +409,57 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             }
         };
 
+        // Helper function to redact sensitive data for debug logging
+        const redactSensitiveData = (obj: any): any => {
+            if (typeof obj !== 'object' || obj === null) {
+                return obj;
+            }
+
+            if (Array.isArray(obj)) {
+                return obj.map(item => redactSensitiveData(item));
+            }
+
+            const redacted = { ...obj };
+            const sensitiveKeys = [
+                'authorization',
+                'bearer',
+                'token',
+                'password',
+                'secret',
+                'key',
+                'credential',
+                'auth'
+            ];
+
+            for (const [key, value] of Object.entries(redacted)) {
+                const lowerKey = key.toLowerCase();
+                if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
+                    if (typeof value === 'string' && value.length > 0) {
+                        redacted[key] = `***${value.substring(Math.max(0, value.length - 4))}`;
+                    } else {
+                        redacted[key] = '***REDACTED***';
+                    }
+                } else if (typeof value === 'object') {
+                    redacted[key] = redactSensitiveData(value);
+                }
+            }
+
+            return redacted;
+        };
+
+        // Helper function for debug logging
+        const debugLog = (message: string, data?: any) => {
+            if (debugMode) {
+                const redactedData = data ? redactSensitiveData(data) : undefined;
+                const logMessage = redactedData
+                    ? `[DEBUG] Request ${requestId}: ${message} - ${JSON.stringify(redactedData, null, 2)}`
+                    : `[DEBUG] Request ${requestId}: ${message}`;
+                api.log("info", logMessage);
+            }
+        };
+
         // Execution configuration and constants
-        const EXECUTION_BUDGET_MS = 30000; // 30 seconds hard limit
+        const EXECUTION_BUDGET_MS = 20000; // 20 seconds hard limit (Cognigy standard)
         const MAX_BACKOFF_MS = 5000; // Maximum delay between retries
         const BASE_BACKOFF_MS = 1000; // Base delay for exponential backoff
 
@@ -388,26 +490,65 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             return false;
         };
 
+        // Helper function to create custom agent for insecure SSL if needed
+        const createRequestAgent = (allowInsecure: boolean) => {
+            if (!allowInsecure) {
+                return undefined;
+            }
+
+            try {
+                // Try to create HTTPS agent for Node.js environment
+                const https = require('https');
+                return new https.Agent({
+                    rejectUnauthorized: false
+                });
+            } catch (error) {
+                // If https module is not available (browser environment), return undefined
+                api.log("warn", "HTTPS agent not available - allowInsecureSSL setting ignored in browser environment");
+                return undefined;
+            }
+        };
+
         // Helper function to make HTTP request with timeout
         const makeHttpRequest = async (requestUrl: string, requestOptions: RequestInit, timeoutMs: number): Promise<Response> => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
             try {
-                const response = await fetch(requestUrl, {
+                const finalRequestOptions: RequestInit = {
                     ...requestOptions,
                     signal: controller.signal
-                });
+                };
+
+                // Add custom agent for insecure SSL if enabled
+                if (allowInsecureSSL) {
+                    const agent = createRequestAgent(true);
+                    if (agent) {
+                        // For Node.js environments, add the agent
+                        (finalRequestOptions as any).agent = agent;
+                        debugLog("Insecure SSL agent configured", {
+                            allowInsecureSSL: true,
+                            rejectUnauthorized: false
+                        });
+                    }
+                }
+
+                const response = await fetch(requestUrl, finalRequestOptions);
                 clearTimeout(timeoutId);
                 return response;
             } catch (error) {
                 clearTimeout(timeoutId);
                 if (error.name === 'AbortError') {
-                    throw new Error(`Request timeout after ${timeoutMs}ms`);
+                    const timeoutError = new Error(`Request timeout after ${timeoutMs}ms`);
+                    timeoutError.name = 'TimeoutError';
+                    throw timeoutError;
                 }
                 throw error;
             }
         };
+
+        // Generate unique request ID for tracking
+        const requestId = generateRequestId();
 
         try {
             // Check for cxonetoken in input.data first, then context as fallback
@@ -421,18 +562,82 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             }
 
             if (!cxoneToken) {
-                const errorMessage = "Missing cxonetoken in input.data or context.cxonetoken. This node can only be used in flows invoked by CXone with authentication.";
-                api.log("error", errorMessage);
-                api.output("Authentication Error", {
-                    error: errorMessage,
-                    status: 401
-                });
+                const errorResponse = ErrorCreators.missingToken(requestId);
+                api.log("error", `Request ${requestId}: ${errorResponse.error?.message}`);
+
+                if (responseTarget && responseKey) {
+                    storeData(responseTarget, responseKey, errorResponse);
+                }
+
+                api.output("Authentication Error", errorResponse);
                 return;
             }
 
-            api.log("info", `Using cxonetoken from ${tokenSource}`);
+            // Validate configuration
+            try {
+                new URL(url);
+            } catch (urlError) {
+                const errorResponse = ErrorCreators.invalidConfig(
+                    `Invalid URL format: ${url}`,
+                    { url, urlError: urlError instanceof Error ? urlError.message : String(urlError) },
+                    requestId
+                );
+                api.log("error", `Request ${requestId}: ${errorResponse.error?.message}`);
 
-            api.log("info", `Making ${method} request to: ${url}`);
+                if (responseTarget && responseKey) {
+                    storeData(responseTarget, responseKey, errorResponse);
+                }
+
+                api.output("Configuration Error", errorResponse);
+                return;
+            }
+
+            // Validate headers JSON format
+            let parsedHeaders: Record<string, string> = {};
+            try {
+                if (typeof headers === "string") {
+                    parsedHeaders = JSON.parse(headers);
+                } else if (typeof headers === "object" && headers !== null) {
+                    parsedHeaders = headers;
+                } else {
+                    parsedHeaders = {};
+                }
+            } catch (headerError) {
+                const errorResponse = ErrorCreators.invalidConfig(
+                    "Invalid headers format - must be valid JSON",
+                    { headers, headerError: headerError instanceof Error ? headerError.message : String(headerError) },
+                    requestId
+                );
+                api.log("error", `Request ${requestId}: ${errorResponse.error?.message}`);
+
+                if (responseTarget && responseKey) {
+                    storeData(responseTarget, responseKey, errorResponse);
+                }
+
+                api.output("Configuration Error", errorResponse);
+                return;
+            }
+
+            api.log("info", `Request ${requestId}: Using cxonetoken from ${tokenSource}`);
+            api.log("info", `Request ${requestId}: Making ${method} request to: ${url}`);
+
+            // Warning for insecure SSL configuration
+            if (allowInsecureSSL) {
+                api.log("warn", `Request ${requestId}: Insecure SSL mode enabled - unauthorized and self-signed certificates will be accepted. Use only in development/testing environments.`);
+            }
+
+            debugLog("Configuration validated", {
+                url,
+                method,
+                payloadType,
+                timeoutMs,
+                enableRetry,
+                retryAttempts,
+                failOnNon2xx,
+                debugMode,
+                allowInsecureSSL,
+                tokenSource
+            });
 
             // Get payload data and prepare request body
             const payloadData = getPayloadData();
@@ -441,7 +646,7 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             // Prepare headers with injected Authorization and appropriate Content-Type
             const requestHeaders: Record<string, string> = {
                 "Content-Type": requestContentType,
-                ...headers,
+                ...parsedHeaders,
                 // Override any user-provided Authorization header
                 "Authorization": `Bearer ${cxoneToken}`
             };
@@ -457,6 +662,13 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 requestOptions.body = requestBody;
             }
 
+            debugLog("Request prepared", {
+                headers: requestHeaders,
+                hasBody: !!requestBody,
+                bodyType: payloadType,
+                bodyLength: requestBody ? requestBody.length : 0
+            });
+
             // Execute HTTP request with retry logic and budget guard
             const startTime = Date.now();
             let lastError: Error | undefined;
@@ -469,20 +681,24 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 // Check execution budget before each attempt
                 const elapsedTime = Date.now() - startTime;
                 if (elapsedTime >= EXECUTION_BUDGET_MS) {
-                    const budgetError = {
-                        status: 500,
-                        body: {
-                            error: `Execution budget exhausted (${EXECUTION_BUDGET_MS}ms exceeded). Request cancelled to prevent platform timeout.`,
+                    const budgetError = createErrorResponse(
+                        "Timeout",
+                        `Execution budget exhausted (${EXECUTION_BUDGET_MS}ms exceeded). Request cancelled to prevent platform timeout.`,
+                        500,
+                        {
                             attempts: attempt - 1,
-                            elapsedMs: elapsedTime
-                        }
-                    };
+                            elapsedMs: elapsedTime,
+                            budgetMs: EXECUTION_BUDGET_MS,
+                            cognigyStandard: "20-second hard limit"
+                        },
+                        requestId
+                    );
 
                     if (responseTarget && responseKey) {
                         storeData(responseTarget, responseKey, budgetError);
                     }
 
-                    api.log("error", `CXone Authenticated Call: Execution budget exhausted after ${elapsedTime}ms`);
+                    api.log("error", `Request ${requestId}: Execution budget exhausted after ${elapsedTime}ms`);
                     api.output("Request failed - execution budget exceeded", budgetError);
                     return;
                 }
@@ -498,12 +714,41 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
 
                     api.log("info", `Attempt ${attempt}/${maxAttempts} - timeout: ${effectiveTimeout}ms`);
 
-                    // Make the HTTP request
-                    const response = await makeHttpRequest(url, requestOptions, effectiveTimeout);
+                    debugLog(`Starting attempt ${attempt}/${maxAttempts}`, {
+                        attempt,
+                        maxAttempts,
+                        effectiveTimeout,
+                        elapsedTime,
+                        remainingBudget: EXECUTION_BUDGET_MS - elapsedTime
+                    });
 
-                    // Check if response should be retried
-                    if (!isRetryableError(undefined, response) || attempt === maxAttempts) {
-                        // Success or final attempt - parse and return response
+                    // Make the HTTP request
+                    const requestStartTime = Date.now();
+                    const response = await makeHttpRequest(url, requestOptions, effectiveTimeout);
+                    const requestDuration = Date.now() - requestStartTime;
+
+                    debugLog(`Request completed`, {
+                        attempt,
+                        status: response.status,
+                        statusText: response.statusText,
+                        durationMs: requestDuration,
+                        responseHeaders: Object.fromEntries(response.headers.entries())
+                    });
+
+                    // First check if this is a retryable response and we can still retry
+                    if (isRetryableError(undefined, response) && attempt < maxAttempts) {
+                        // This is a retryable error and we haven't reached max attempts - continue to retry
+                        lastResponse = response;
+                        debugLog(`Retryable HTTP error received`, {
+                            attempt,
+                            status: response.status,
+                            statusText: response.statusText,
+                            willRetry: true,
+                            isRetryable: true
+                        });
+                        api.log("warn", `Request ${requestId}: Attempt ${attempt} received retryable status ${response.status}, will retry`);
+                    } else {
+                        // Either not retryable, or final attempt - parse and return response
                         let responseBody;
                         const responseContentType = response.headers.get("content-type");
 
@@ -513,7 +758,43 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                             responseBody = await response.text();
                         }
 
-                        // Prepare result object
+                        debugLog("Response body parsed", {
+                            contentType: responseContentType,
+                            bodyType: typeof responseBody,
+                            bodyLength: typeof responseBody === 'string' ? responseBody.length :
+                                       typeof responseBody === 'object' ? JSON.stringify(responseBody).length : 0
+                        });
+
+                        // Handle non-2xx responses based on failOnNon2xx setting
+                        if (!response.ok && failOnNon2xx) {
+                            // Treat non-2xx as error when failOnNon2xx is true
+                            const httpError = ErrorCreators.httpError(
+                                response.status,
+                                response.statusText || `HTTP ${response.status}`,
+                                responseBody,
+                                requestId
+                            );
+
+                            debugLog("Non-2xx treated as error", {
+                                status: response.status,
+                                statusText: response.statusText,
+                                failOnNon2xx,
+                                isRetryable: isRetryableError(undefined, response),
+                                attempt,
+                                maxAttempts,
+                                totalDuration: Date.now() - startTime
+                            });
+
+                            if (responseTarget && responseKey) {
+                                storeData(responseTarget, responseKey, httpError);
+                            }
+
+                            api.log("error", `Request ${requestId}: Non-2xx response treated as error - Status: ${response.status} (attempt ${attempt}/${maxAttempts})`);
+                            api.output(`HTTP ${response.status} Error`, httpError);
+                            return;
+                        }
+
+                        // Prepare result object (legacy format for backward compatibility or when failOnNon2xx is false)
                         const result: any = {
                             status: response.status,
                             body: responseBody
@@ -536,35 +817,71 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                             };
                         }
 
-                        api.log("info", `Request completed with status: ${response.status} (attempt ${attempt}/${maxAttempts})`);
+                        // For successful responses or when failOnNon2xx is false, use success format
+                        let finalResult;
+                        if (response.ok) {
+                            // 2xx responses are always successful
+                            finalResult = createSuccessResponse(result);
+                        } else {
+                            // Non-2xx with failOnNon2xx=false: treat as success but preserve status info
+                            finalResult = createSuccessResponse(result);
+                        }
+
+                        const totalDuration = Date.now() - startTime;
+
+                        debugLog("Request completed successfully", {
+                            status: response.status,
+                            ok: response.ok,
+                            attempt,
+                            maxAttempts,
+                            totalDurationMs: totalDuration,
+                            failOnNon2xx,
+                            storeResponseHeaders,
+                            responseTarget,
+                            responseKey
+                        });
+
+                        api.log("info", `Request ${requestId}: Completed with status ${response.status} (attempt ${attempt}/${maxAttempts})`);
 
                         // Store complete response object in configured target/key
                         if (responseTarget && responseKey) {
-                            storeData(responseTarget, responseKey, result);
+                            storeData(responseTarget, responseKey, finalResult);
                             const headerInfo = storeResponseHeaders ? " (including headers)" : "";
-                            api.log("info", `Complete response stored in ${responseTarget}.${responseKey}${headerInfo}`);
+                            api.log("info", `Request ${requestId}: Response stored in ${responseTarget}.${responseKey}${headerInfo}`);
                         }
 
                         // Output the result
-                        const outputMessage = response.ok ? "Request completed successfully" : `Request completed with status ${response.status}`;
-                        api.output(outputMessage, result);
+                        const outputMessage = response.ok
+                            ? "Request completed successfully"
+                            : `Request completed with status ${response.status} (treated as success)`;
+                        api.output(outputMessage, finalResult);
                         return;
                     }
-
-                    // Store for potential retry
-                    lastResponse = response;
-                    api.log("warn", `Attempt ${attempt} received retryable status ${response.status}, will retry`);
 
                 } catch (error) {
                     lastError = error instanceof Error ? error : new Error(String(error));
 
                     // Check if error should be retried
                     if (!enableRetry || !isRetryableError(lastError) || attempt === maxAttempts) {
-                        // Not retryable or final attempt - throw error
-                        throw lastError;
+                        // Not retryable or final attempt - handle error appropriately
+                        let errorResponse;
+
+                        if (lastError.name === 'TimeoutError') {
+                            errorResponse = ErrorCreators.timeout(timeoutMs, requestId);
+                        } else {
+                            errorResponse = ErrorCreators.networkError(lastError.message, requestId);
+                        }
+
+                        if (responseTarget && responseKey) {
+                            storeData(responseTarget, responseKey, errorResponse);
+                        }
+
+                        api.log("error", `Request ${requestId}: ${errorResponse.error?.message} (attempt ${attempt}/${maxAttempts})`);
+                        api.output("Request failed", errorResponse);
+                        return;
                     }
 
-                    api.log("warn", `Attempt ${attempt} failed with error: ${lastError.message}, will retry`);
+                    api.log("warn", `Request ${requestId}: Attempt ${attempt} failed with error: ${lastError.message}, will retry`);
                 }
 
                 // Wait before next retry (skip delay on final attempt)
@@ -578,6 +895,13 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                         break;
                     }
 
+                    debugLog(`Retry delay initiated`, {
+                        backoffDelay,
+                        nextAttempt: attempt + 1,
+                        remainingBudget,
+                        elapsedTime: Date.now() - startTime
+                    });
+
                     api.log("info", `Waiting ${backoffDelay}ms before retry attempt ${attempt + 1}`);
                     await sleep(backoffDelay);
                 }
@@ -585,46 +909,40 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
 
             // All retries exhausted - return structured error
             const finalElapsed = Date.now() - startTime;
-            const retryExhaustionError = {
-                status: lastResponse?.status || 500,
-                body: {
-                    error: lastError?.message || `All ${maxAttempts} attempts failed`,
-                    retryInfo: {
-                        attempts: maxAttempts,
-                        elapsedMs: finalElapsed,
-                        lastError: lastError?.message,
-                        lastStatus: lastResponse?.status
-                    }
-                }
-            };
+            const retryExhaustionError = ErrorCreators.retryExhausted(
+                maxAttempts,
+                lastError?.message || "Unknown error",
+                finalElapsed,
+                requestId
+            );
 
             if (responseTarget && responseKey) {
                 storeData(responseTarget, responseKey, retryExhaustionError);
             }
 
-            api.log("error", `CXone Authenticated Call: All ${maxAttempts} attempts failed after ${finalElapsed}ms`);
+            api.log("error", `Request ${requestId}: All ${maxAttempts} attempts failed after ${finalElapsed}ms`);
             api.output("Request failed - retry attempts exhausted", retryExhaustionError);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Unknown error occurred during HTTP request";
-            api.log("error", `CXone Authenticated Call error: ${errorMessage}`);
+            const errorResponse = createErrorResponse(
+                "NetworkError",
+                errorMessage,
+                500,
+                { originalError: errorMessage },
+                requestId
+            );
 
-            // Return structured error response
-            const errorResult = {
-                status: 500,
-                body: {
-                    error: errorMessage
-                }
-            };
+            api.log("error", `Request ${requestId}: ${errorMessage}`);
 
             // Store complete error response in configured target/key
             if (responseTarget && responseKey) {
-                storeData(responseTarget, responseKey, errorResult);
-                api.log("info", `Error response stored in ${responseTarget}.${responseKey}`);
+                storeData(responseTarget, responseKey, errorResponse);
+                api.log("info", `Request ${requestId}: Error response stored in ${responseTarget}.${responseKey}`);
             }
 
             // Output the error result
-            api.output("Request failed", errorResult);
+            api.output("Request failed", errorResponse);
         }
     }
 });

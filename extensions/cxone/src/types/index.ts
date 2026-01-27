@@ -155,6 +155,37 @@ export type ResponseTarget = "context" | "input";
 export type PayloadType = "json" | "text" | "form";
 
 /**
+ * Error types for standardized error handling
+ */
+export type ErrorType =
+    | "MissingToken"
+    | "InvalidConfig"
+    | "Timeout"
+    | "NetworkError"
+    | "HttpError"
+    | "RetryExhausted";
+
+/**
+ * Standardized error payload structure
+ */
+export interface StandardizedError {
+    type: ErrorType;
+    message: string;
+    status?: number;
+    details?: Record<string, any>;
+    requestId?: string;
+}
+
+/**
+ * Standardized response payload structure
+ */
+export interface StandardizedResponse {
+    success: boolean;
+    error?: StandardizedError;
+    data?: any;
+}
+
+/**
  * Authenticated call node configuration
  */
 export interface AuthenticatedCallNodeConfig {
@@ -175,6 +206,13 @@ export interface AuthenticatedCallNodeConfig {
     timeoutMs?: number;
     enableRetry?: boolean;
     retryAttempts?: number;
+
+    // Error handling and debug configuration
+    failOnNon2xx?: boolean;
+    debugMode?: boolean;
+
+    // Security configuration
+    allowInsecureSSL?: boolean;
 
     responseTarget?: ResponseTarget;
     responseKey?: string;
