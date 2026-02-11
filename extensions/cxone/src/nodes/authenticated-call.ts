@@ -171,7 +171,7 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             key: "retryAttempts",
             label: "Retry Attempts",
             type: "number",
-            description: "Additional retry attempts beyond the initial request. Uses exponential backoff with jitter.",
+            description: "Number of additional retry attempts after the initial request fails. Example: 2 retry attempts = 3 total attempts (1 initial + 2 retries). Uses exponential backoff with jitter.",
             defaultValue: 1,
             params: {
                 required: false,
@@ -673,11 +673,13 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             const startTime = Date.now();
             let lastError: Error | undefined;
             let lastResponse: Response | undefined;
+            let actualAttempts = 0;
             const maxAttempts = enableRetry ? Math.min(retryAttempts + 1, 6) : 1;
 
             api.log("info", `Executing ${method} request with timeout: ${timeoutMs}ms, max attempts: ${maxAttempts}`);
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                actualAttempts = attempt;
                 // Check execution budget before each attempt
                 const elapsedTime = Date.now() - startTime;
                 if (elapsedTime >= EXECUTION_BUDGET_MS) {
@@ -747,6 +749,9 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                             isRetryable: true
                         });
                         api.log("warn", `Request ${requestId}: Attempt ${attempt} received retryable status ${response.status}, will retry`);
+
+                        // Continue to next retry attempt
+                        continue;
                     } else {
                         // Either not retryable, or final attempt - parse and return response
                         let responseBody;
@@ -910,7 +915,7 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
             // All retries exhausted - return structured error
             const finalElapsed = Date.now() - startTime;
             const retryExhaustionError = ErrorCreators.retryExhausted(
-                maxAttempts,
+                actualAttempts,
                 lastError?.message || "Unknown error",
                 finalElapsed,
                 requestId
@@ -920,7 +925,7 @@ export const cxoneAuthenticatedCall = createNodeDescriptor({
                 storeData(responseTarget, responseKey, retryExhaustionError);
             }
 
-            api.log("error", `Request ${requestId}: All ${maxAttempts} attempts failed after ${finalElapsed}ms`);
+            api.log("error", `Request ${requestId}: All ${actualAttempts} attempts failed after ${finalElapsed}ms`);
             api.output("Request failed - retry attempts exhausted", retryExhaustionError);
 
         } catch (error) {
