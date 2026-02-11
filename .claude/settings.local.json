@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(npm run transpile:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm:*)",
+      "Bash(node --version:*)",
+      "Bash(ls:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(tar:*)",
+      "Bash(./node_modules/.bin/jest:*)",
+      "Bash(npx jest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(find:*)",
+      "Bash(echo:*)",
+      "Bash(git checkout:*)",
+      "Bash(node fix_tests.js:*)",
+      "Bash(node -e:*)"
+    ]
+  }
+}

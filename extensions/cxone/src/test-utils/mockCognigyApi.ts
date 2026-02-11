@@ -4,6 +4,7 @@ export interface MockApi {
   log: jest.Mock;
   addToContext: jest.Mock;
   output: jest.Mock;
+  setProfileKey?: jest.Mock;
 }
 
 export interface MockCognigy {

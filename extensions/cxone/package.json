@@ -1,7 +1,7 @@
 {
   "name": "cxone",
-  "version": "1.0.10",
-  "description": "CXone Extension to interact with NiCE CXone platform",
+  "version": "1.0.26",
+  "description": "CXone Extension for authenticated HTTP requests to CXone APIs",
   "main": "build/module.js",
   "scripts": {
     "transpile": "tsc -p .",
@@ -13,23 +13,16 @@
   },
   "keywords": [
     "CXone",
-    "Transfer to Agent",
-    "Escalate to Agent",
-    "End Conversation",
-    "Complete Interaction",
-    "Signal CXone",
-    "Signal Interaction",
-    "CXone API",
-    "NiCE API"
+    "HTTP Client",
+    "Authenticated Requests",
+    "CXone API"
   ],
   "author": "NiCE",
   "license": "NiCE",
   "dependencies": {
-    "@cognigy/extension-tools": "^0.14.0",
-    "jsonwebtoken": "^9.0.2"    
+    "@cognigy/extension-tools": "^0.14.0"
   },
   "devDependencies": {
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/jest": "^29.5.12",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
